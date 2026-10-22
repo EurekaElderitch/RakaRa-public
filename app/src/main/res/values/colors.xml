@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="eink_black">#111111</color>
+    <color name="eink_white">#FAFAFA</color>
+    <color name="eink_bg">#F7F7F5</color>
+</resources>
