@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RAKARA</string>
+    <string name="engine_repo_url" translatable="false">https://github.com/EurekaElderitch/RakaRa-public/releases/latest/download/index.json</string>
+    <string name="brand_company" translatable="false">HynchLabs</string>
+</resources>
