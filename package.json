@@ -1,0 +1,14 @@
+{
+  "name": "rakara-tools",
+  "type": "module",
+  "private": true,
+  "version": "0.1.0",
+  "description": "RAKARA engine packager & dev tools",
+  "scripts": {
+    "build:example": "node tools/build-rkx.mjs example",
+    "install:latest": "bash tools/install-engine.sh"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}
