@@ -1,0 +1,12 @@
+{
+  "id": "en.example",
+  "name": "Example",
+  "version": 1,
+  "apiVersion": 1,
+  "className": "dev.rakara.engines.example.ExampleSource",
+  "lang": "en",
+  "nsfw": false,
+  "icon": null,
+  "sha256": "PACKAGER_FILLS_THIS",
+  "runtime": "dex"
+}
