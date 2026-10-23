@@ -1,0 +1,81 @@
+﻿name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'app-v*'          # Trigger saat push tag app-vX.X.X
+  workflow_dispatch:
+
+# --- TAMBAHAN KRUSIAL: IZIN UNTUK MEMBUAT RELEASE ---
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" > /dev/null 2>&1 || true
+          ls $ANDROID_HOME/build-tools/
+          ls $ANDROID_HOME/platforms/
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      # --- BUILD DEBUG (Jalan setiap push ke main) ---
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RakaRa-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # --- BUILD RELEASE (Hanya jalan kalau push tag app-v*) ---
+      - name: Build Release APK
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Upload Release APK as Artifact
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: RakaRa-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      # --- PUBLISH KE GITHUB RELEASES (Hanya jalan kalau push tag app-v*) ---
+      - name: Publish Release APK to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk  # Upload .apk MURNI, bukan zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
