@@ -1,0 +1,53 @@
+name: Release Engines
+on:
+  push:
+    tags: ['engines-v*']
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Build jar
+        run: ./gradlew :source-api:jar :engines:eng01:jar --no-daemon
+
+      - name: Package all engines
+        run: |
+          for d in engines/*/; do
+            name=$(basename "$d")
+            [ -f "engines/$name/manifest.template.json" ] && node tools/build-rkx.mjs "$name"
+          done
+
+      - name: Build index.json
+        run: node tools/build-index.mjs
+        env:
+          RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+      - name: List dist contents
+        run: ls -la dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.rkx
+            dist/index.json
+          generate_release_notes: true
