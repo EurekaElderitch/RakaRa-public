@@ -1,0 +1,49 @@
+﻿# ---------- Gradle ----------
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# ---------- Android ----------
+local.properties
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# ---------- IDE ----------
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# ---------- Node ----------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---------- RakaRa artifacts ----------
+dist/
+*.rkx
+engines/*/build/
+engines/*/manifest.json
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+
+# ---------- Logs ----------
+*.log
+
+# Secrets - JANGAN commit
+secrets.json
+
+# Signing
+release.keystore
+*.keystore
+*.jks
+*.bak
+cls

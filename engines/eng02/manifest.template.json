@@ -1,0 +1,12 @@
+{
+  "id": "eng02",
+  "name": "Engine 2",
+  "version": 1,
+  "apiVersion": 1,
+  "className": "dev.rakara.engines.eng02.Source02",
+  "lang": "id",
+  "nsfw": false,
+  "icon": null,
+  "sha256": "PACKAGER_FILLS_THIS",
+  "runtime": "dex"
+}

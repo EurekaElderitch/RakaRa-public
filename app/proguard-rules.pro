@@ -1,0 +1,3 @@
+-keep class dev.rakara.source.** { *; }
+-keep class dev.rakara.engine.** { *; }
+-keepattributes *Annotation*
