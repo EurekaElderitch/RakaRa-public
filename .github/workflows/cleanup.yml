@@ -1,0 +1,241 @@
+name: Cleanup Artifacts & Old Runs
+
+on:
+  workflow_dispatch:
+    inputs:
+      days_old:
+        description: 'Hapus item yang lebih lama dari N hari'
+        required: true
+        default: '7'
+        type: string
+      dry_run:
+        description: 'Dry run (hanya tampilkan, tidak hapus)'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      delete_runs:
+        description: 'Hapus workflow runs lama juga (bukan hanya artifact)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Cleanup artifacts & runs
+        uses: actions/github-script@v7
+        env:
+          DAYS_OLD: ${{ github.event.inputs.days_old || '7' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          DELETE_RUNS: ${{ github.event.inputs.delete_runs || 'false' }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const daysOld = parseInt(process.env.DAYS_OLD, 10) || 7;
+            const dryRun = process.env.DRY_RUN === 'true';
+            const deleteRuns = process.env.DELETE_RUNS === 'true';
+            const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+
+            console.log(`Owner        : ${owner}`);
+            console.log(`Repo         : ${repo}`);
+            console.log(`Cutoff date  : ${cutoffDate.toISOString()} (${daysOld} hari lalu)`);
+            console.log(`Dry run      : ${dryRun}`);
+            console.log(`Hapus runs   : ${deleteRuns}`);
+            console.log('===================================\n');
+
+            // ============================================
+            // STEP 1: HAPUS ARTIFACTS (explicit pagination)
+            // ============================================
+            console.log('=== STEP 1: ARTIFACTS ===');
+
+            const allArtifacts = [];
+            let page = 1;
+            while (true) {
+              let response;
+              try {
+                response = await github.rest.actions.listArtifactsForRepo({
+                  owner, repo, per_page: 100, page
+                });
+              } catch (err) {
+                console.error(`Gagal fetch artifacts page ${page}: ${err.message}`);
+                break;
+              }
+              const items = (response.data && response.data.artifacts) ? response.data.artifacts : [];
+              if (items.length === 0) break;
+              allArtifacts.push(...items);
+              if (items.length < 100) break;
+              page++;
+              if (page > 50) break; // safety cap
+            }
+
+            console.log(`Total artifacts ditemukan: ${allArtifacts.length}\n`);
+
+            // Debug: tampilkan struktur artifact pertama
+            if (allArtifacts.length > 0) {
+              console.log(`Sample artifact[0] keys: ${Object.keys(allArtifacts[0]).join(', ')}`);
+              console.log(`Sample artifact[0]: ${JSON.stringify(allArtifacts[0]).slice(0, 200)}\n`);
+            }
+
+            let deletedArtifacts = 0;
+            let deletedSize = 0;
+            let skippedArtifacts = 0;
+            let invalidArtifacts = 0;
+
+            for (const artifact of allArtifacts) {
+              // Defensive check — skip kalau artifact invalid
+              if (!artifact || typeof artifact !== 'object' || !artifact.id) {
+                invalidArtifacts++;
+                console.warn(`[SKIP] Artifact invalid: ${JSON.stringify(artifact)}`);
+                continue;
+              }
+
+              const createdAtStr = artifact.created_at || artifact.createdAt;
+              if (!createdAtStr) {
+                invalidArtifacts++;
+                console.warn(`[SKIP] Artifact ${artifact.name} tidak punya created_at`);
+                continue;
+              }
+
+              const createdAt = new Date(createdAtStr);
+              if (isNaN(createdAt.getTime())) {
+                invalidArtifacts++;
+                console.warn(`[SKIP] Artifact ${artifact.name} created_at tidak valid: ${createdAtStr}`);
+                continue;
+              }
+
+              if (createdAt > cutoffDate) {
+                skippedArtifacts++;
+                continue;
+              }
+
+              const sizeBytes = artifact.size_in_bytes || artifact.sizeInBytes || 0;
+              const sizeMB = (sizeBytes / 1024 / 1024).toFixed(2);
+              const prefix = dryRun ? '[DRY]' : '[DEL]';
+              console.log(`${prefix} ${artifact.name || '(tanpa nama)'} — ${sizeMB} MB — ${createdAtStr}`);
+
+              if (!dryRun) {
+                try {
+                  await github.rest.actions.deleteArtifact({
+                    owner, repo, artifact_id: artifact.id
+                  });
+                  deletedArtifacts++;
+                  deletedSize += sizeBytes;
+                } catch (err) {
+                  console.error(`   Gagal hapus: ${err.message}`);
+                }
+              } else {
+                deletedArtifacts++;
+                deletedSize += sizeBytes;
+              }
+            }
+
+            console.log(`\nArtifact summary:`);
+            console.log(`  Akan dihapus : ${deletedArtifacts}`);
+            console.log(`  Dilewati     : ${skippedArtifacts} (masih baru)`);
+            console.log(`  Invalid      : ${invalidArtifacts}`);
+            console.log(`  Total size   : ${(deletedSize / 1024 / 1024).toFixed(2)} MB`);
+
+            // ============================================
+            // STEP 2: HAPUS WORKFLOW RUNS (opsional)
+            // ============================================
+            let deletedRuns = 0;
+            let skippedRuns = 0;
+
+            if (deleteRuns) {
+              console.log('\n=== STEP 2: WORKFLOW RUNS ===');
+
+              const allRuns = [];
+              let runPage = 1;
+              while (true) {
+                let response;
+                try {
+                  response = await github.rest.actions.listWorkflowRunsForRepo({
+                    owner, repo, per_page: 100, page: runPage
+                  });
+                } catch (err) {
+                  console.error(`Gagal fetch runs page ${runPage}: ${err.message}`);
+                  break;
+                }
+                const items = (response.data && response.data.workflow_runs) ? response.data.workflow_runs : [];
+                if (items.length === 0) break;
+                allRuns.push(...items);
+                if (items.length < 100) break;
+                runPage++;
+                if (runPage > 50) break;
+              }
+
+              console.log(`Total runs ditemukan: ${allRuns.length}\n`);
+
+              for (const run of allRuns) {
+                if (!run || !run.id) {
+                  console.warn(`[SKIP] Run invalid`);
+                  continue;
+                }
+                if (run.status === 'in_progress' || run.status === 'queued') {
+                  console.log(`[SKIP] Run #${run.run_number} — sedang ${run.status}`);
+                  skippedRuns++;
+                  continue;
+                }
+                const runDate = new Date(run.created_at);
+                if (isNaN(runDate.getTime()) || runDate > cutoffDate) {
+                  skippedRuns++;
+                  continue;
+                }
+
+                const prefix = dryRun ? '[DRY]' : '[DEL]';
+                console.log(`${prefix} Run #${run.run_number} — ${run.name || 'unknown'} — ${run.created_at}`);
+
+                if (!dryRun) {
+                  try {
+                    await github.rest.actions.deleteWorkflowRun({
+                      owner, repo, run_id: run.id
+                    });
+                    deletedRuns++;
+                  } catch (err) {
+                    console.error(`   Gagal: ${err.message}`);
+                  }
+                } else {
+                  deletedRuns++;
+                }
+              }
+
+              console.log(`\nRun summary:`);
+              console.log(`  Akan dihapus : ${deletedRuns}`);
+              console.log(`  Dilewati     : ${skippedRuns}`);
+            }
+
+            // ============================================
+            // STEP 3: SUMMARY DI UI GITHUB ACTIONS
+            // ============================================
+            await core.summary
+              .addHeading('Cleanup Report', 2)
+              .addTable([
+                [{ data: 'Item', header: true }, { data: 'Jumlah', header: true }],
+                ['Artifacts ditemukan', String(allArtifacts.length)],
+                ['Artifacts dihapus', String(deletedArtifacts)],
+                ['Artifacts dilewati', String(skippedArtifacts)],
+                ['Artifacts invalid', String(invalidArtifacts)],
+                ['Total size', `${(deletedSize / 1024 / 1024).toFixed(2)} MB`],
+                ['Runs dihapus', deleteRuns ? String(deletedRuns) : 'N/A'],
+                ['Runs dilewati', deleteRuns ? String(skippedRuns) : 'N/A'],
+                ['Dry run', dryRun ? 'Ya' : 'Tidak'],
+              ])
+              .write();
+
+            console.log('\n=== SELESAI ===');
